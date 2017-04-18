@@ -1,0 +1,20 @@
+{
+  "name": "granmoes.js",
+  "version": "1.0.0",
+  "description": "Dynamic rating system for pull requests",
+  "main": "index.js",
+  "scripts": {
+    "start": "echo \"todo\" && exit 1"
+  },
+  "keywords": [
+    "Granmoe"
+  ],
+  "author": "Zach Wolf",
+  "license": "ISC",
+  "dependencies": {
+    "canvas": "^1.6.5",
+    "color-convert": "^1.9.0",
+    "express": "^4.15.2",
+    "promisify-node": "^0.4.0"
+  }
+}
