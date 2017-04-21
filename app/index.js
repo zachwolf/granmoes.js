@@ -1,90 +1,51 @@
 const express = require('express')
-const Canvas = require('canvas')
-const Image = Canvas.Image
-const promisify = require("promisify-node")
-const convert = require('color-convert')
+const promisify = require('promisify-node')
+const fs = promisify('fs')
+const { get, has, isNil } = require('lodash')
 
-const fs = promisify("fs")
+const {
+  images: imageRoutes,
+  buildRatingPath
+} = require('./routes')
+const imageToGreyScale = require('./image-processing/image-to-grey-scale')
+const generateRatingImage = require('./image-processing/generate-rating-image')
+const fetchOrMake = require('./fetch-or-make')
+
 const app = express()
 
 const GRANMOE_LIMIT = 5
+const DEFAULT_USER = 'granmoe'
 
-app.get('/rating/:value', function (req, res) {
-  const rating = parseFloat(req.params.value, 10)
-  const minGranmoe = Math.min(GRANMOE_LIMIT, rating)
+app.get('/rating/:user?/:value.:ext?', function (req, res) {
+  let { user, value = 0, ext = 'png' } = req.params
 
-  const ratingInt = Math.floor(minGranmoe)
-  const ratingFloat = minGranmoe % 1
+  if (isNil(user) || !has(imageRoutes, user)) {
+    user = DEFAULT_USER
+  }
 
-  fs.readFile(__dirname + '/public/granmoe.png')
-    .then(function(granmoe) {
-      // original image
-      const granmoePNG = new Image()
-      granmoePNG.src = granmoe
+  value = Math.max(Math.min(value, GRANMOE_LIMIT), 0)
 
-      // final image
-      const canvas = new Canvas(granmoePNG.width * 5, granmoePNG.height)
-      const ctx = canvas.getContext('2d')
+  const {
+    color: colorPath,
+    grey: greyPath
+  } = get(imageRoutes, user)
 
-      // make a grey scale copy
-      const greyCanvas = new Canvas(granmoePNG.width, granmoePNG.height)
-      const greyCtx = greyCanvas.getContext('2d')
+  const ratingPath = buildRatingPath(user, value, ext)
 
-      greyCtx.drawImage(granmoePNG, 0, 0, granmoePNG.width, granmoePNG.height)
+  const greyMaker = colorImg => () => imageToGreyScale(greyPath, colorImg)
+  const ratingMaker = imgArr => () => generateRatingImage(ratingPath, value, ...imgArr)
 
-      for (var y = 0; y <= granmoePNG.height; y++) {
-        for (var x = 0; x <= granmoePNG.width; x++) {
-          const pixel = greyCtx.getImageData(x, y, 1, 1)
-          const [r, g, b] = pixel.data
-          const [h, s, l] = convert.rgb.hsl(r, g, b)
-
-          if (s !== 0) {
-            const grey = convert.hsl.hex(h, 0, l)
-            greyCtx.fillStyle = `#${grey}`
-            greyCtx.fillRect(x, y, 1, 1)
-          }
-        }
-      }
-
-      const granmoeTheGreyPNG = new Image()
-      granmoeTheGreyPNG.src = greyCanvas.toDataURL()
-
-      // draw grey background images
-      for (let i = 0; i <= GRANMOE_LIMIT; i++) {
-        ctx.drawImage(granmoeTheGreyPNG, i * granmoePNG.width, 0, granmoePNG.width, granmoePNG.height)
-      }
-
-      // draw colored whole rating
-      for (let i = 0; i <= ratingInt - 1; i++) {
-        ctx.drawImage(granmoePNG, i * granmoePNG.width, 0, granmoePNG.width, granmoePNG.height)
-      }
-
-      // draw colored part rating
-      const granmoePattern = ctx.createPattern(granmoePNG, "repeat")
-      ctx.fillStyle = granmoePattern
-      ctx.fillRect(ratingInt * granmoePNG.width, 0, granmoePNG.width * ratingFloat, granmoePNG.height)
-
-      canvas.toBuffer(function(err, buf) {
-        res.end(buf, 'binary')
-      })
-    })
+  fs.readFile(colorPath)
+    .then(colorImg => new Promise(resolve => {
+      fetchOrMake(greyPath, greyMaker(colorImg))
+        .then(greyImg => resolve([colorImg, greyImg]))
+    }))
+    .then(imgArr => fetchOrMake(ratingPath, ratingMaker(imgArr)))
+    .then(ratingImage => res.end(ratingImage, 'binary'))
 })
 
-app.get('*', function (req, res) {
-  const options = {
-    root: __dirname + '/public/',
-    dotfiles: 'deny',
-    headers: {
-        'x-timestamp': Date.now(),
-        'x-sent': true
-    }
-  };
-
-  res.sendFile('index.html', options, function (err) {
-    if (err) {
-      next(err);
-    }
-  });
+app.get('/', function (req, res) {
+  res.send('hello, granmoe')
 })
 
 app.listen(3000, function () {
